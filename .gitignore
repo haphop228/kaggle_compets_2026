@@ -19,5 +19,3 @@ build/
 */catboost_info/
 */models/
 */.DS_Store
-*/*.md
-**/*.md

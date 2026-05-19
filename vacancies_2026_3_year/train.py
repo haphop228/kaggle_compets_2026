@@ -1,11 +1,3 @@
-"""
-Final Training Script for Vacancies 2026 Salary Prediction
-Best Configuration (from exp03):
-- Ridge Regression on 200k TF-IDF features (alpha=0.5)
-- XGBoost on Separate SVD features (title200 + desc500 + skills100)
-- Blend: 0.75 * Ridge + 0.25 * XGBoost
-OOF MAPE: ~0.2169
-"""
 import sys, os, time
 import numpy as np
 import pandas as pd
@@ -19,7 +11,6 @@ import xgboost as xgblib
 import warnings
 warnings.filterwarnings("ignore")
 
-# ── Constants ─────────────────────────────────────────────────────────────────
 TARGET     = "salary_mean_net"
 SEED       = 42
 N_SPLITS   = 5
@@ -43,7 +34,6 @@ NUM_COLS = [
     "desc_len", "title_len", "skills_len", "accept_handicapped", "accept_kids",
 ]
 
-# ── Helper Functions ──────────────────────────────────────────────────────────
 def mape(y_true, y_pred):
     return float(np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))))
 
@@ -57,8 +47,6 @@ def smoothed_te(col_tr, col_val, col_te, y_tr, gm, k=STE_K):
         col_te.map(te_map).fillna(gm).values,
     )
 
-# ── 1. Data Loading & Preprocessing ───────────────────────────────────────────
-print("Loading data...")
 train = pd.read_csv("data/train.csv")
 test  = pd.read_csv("data/test_x.csv")
 
@@ -89,8 +77,6 @@ for df in [train, test]:
 
 n_train = len(train)
 
-# ── 2. Feature Engineering for Ridge ──────────────────────────────────────────
-print("\nBuilding features for Ridge...")
 corpus = pd.concat([train["mega_text"], test["mega_text"]], ignore_index=True)
 
 tf_200 = TfidfVectorizer(max_features=200000, ngram_range=(1,2), sublinear_tf=True, min_df=2, dtype=np.float32)
@@ -106,8 +92,6 @@ Xcat_te = ohe.transform(test[cat_cols_ohe].astype(str))
 Xr_200_tr = sp.hstack([X_tfidf_200[:n_train], Xcat_tr])
 Xr_200_te = sp.hstack([X_tfidf_200[n_train:], Xcat_te])
 
-# ── 3. Feature Engineering for XGBoost ────────────────────────────────────────
-print("\nBuilding features for XGBoost...")
 corpus_t = pd.concat([train[TITLE_COL],  test[TITLE_COL]],  ignore_index=True)
 corpus_d = pd.concat([train[DESC_COL],   test[DESC_COL]],   ignore_index=True)
 corpus_s = pd.concat([train[SKILLS_COL], test[SKILLS_COL]], ignore_index=True)
@@ -165,8 +149,6 @@ def build_fold_xgb(tr_idx, val_idx):
     X_te  = np.hstack([X_svd_te,           X_low_te,          X_num_te,          te_te])
     return X_tr, X_val, X_te
 
-# ── 4. Training Models ────────────────────────────────────────────────────────
-print("\nTraining Ridge (200k, alpha=0.5)...")
 oof_ridge = np.zeros(n_train); pred_ridge = np.zeros(len(test))
 for tr_idx, val_idx in kf.split(range(n_train)):
     m = Ridge(alpha=0.5)
@@ -175,7 +157,6 @@ for tr_idx, val_idx in kf.split(range(n_train)):
     pred_ridge += np.expm1(m.predict(Xr_200_te)) / N_SPLITS
 print(f"  Ridge OOF MAPE: {mape(y_raw, oof_ridge):.4f}")
 
-print("\nTraining XGBoost (sep800)...")
 XGB_PARAMS = {
     "objective": "reg:squarederror", "eval_metric": "rmse",
     "n_estimators": 8000, "learning_rate": 0.02,
@@ -196,9 +177,6 @@ for fold, (tr_idx, val_idx) in enumerate(kf.split(X_svd_tr)):
     print(f"  Fold {fold+1} XGB MAPE: {mape(y_raw[val_idx], oof_xgb[val_idx]):.4f}")
 print(f"  XGB OOF MAPE: {mape(y_raw, oof_xgb):.4f}")
 
-# ── 5. Blending & Post-processing ─────────────────────────────────────────────
-print("\nBlending models...")
-# Best weights from exp03
 w_ridge = 0.75
 w_xgb = 0.25
 
@@ -208,8 +186,6 @@ pred_blend = w_ridge * pred_ridge + w_xgb * pred_xgb
 final_mape = mape(y_raw, oof_blend)
 print(f"Final Blend OOF MAPE: {final_mape:.4f}")
 
-# Post-processing: Rounding
-# Since 73.5% of salaries are multiples of 100, we round predictions to nearest 100
 pred_blend_rounded = np.round(pred_blend / 100) * 100
 
 sub = pd.DataFrame({"id": test["id"], TARGET: pred_blend_rounded})
